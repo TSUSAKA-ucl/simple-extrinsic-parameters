@@ -1,0 +1,2 @@
+# 全ての .wolfram ファイルを、開いた時に自動で .ipynb とペアリングする設定
+formats = "ipynb,wolfram"

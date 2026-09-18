@@ -1,0 +1,301 @@
+(* -*- coding: utf-8 -*-
+(* --- *)
+(* jupyter: *)
+(*   jupytext: *)
+(*     text_representation: *)
+(*       extension: .wolfram *)
+(*       format_name: percent *)
+(*       format_version: '1.3' *)
+(*       jupytext_version: 1.19.5 *)
+(*   kernelspec: *)
+(*     display_name: Wolfram Language 15 *)
+(*     language: Wolfram Language *)
+(*     name: wolframlanguage15 *)
+(* --- *)
+
+(* %% *)
+(* アームの先端に付けたマーカーから、カメラposeとマーカー取り付け位置を同時推定する *)
+
+(* %% *)
+<<Isometry3`
+
+(* %% *)
+(* camTbase = rotx[-camRx].roty[-camRy].rotz[-camRz].translate[-{camx,camy,camz}] *)
+
+(* %% *)
+(* handtmarker = translate[{markerx,markery,markerz}].rotz[markerRz].roty[markerRy].rotz[markerRz] *)
+
+(* %% *)
+homo[p_] := { fx p[[1]]/p[[3]] + cx, fy p[[2]] / p[[3]] + cy}
+
+(* %% *)
+(* posex[[1;;3]]が baseThandのtranslation部分。posex[[4;;6]]が同rz, ry, rx *)
+
+(* %% *)
+(* データセットとしてのposeを座標変換行列 baseThand にする関数 *)
+poseEuler2Quat[pose_]:=Join[pose[[;;3]],Apply[List,mat2quat[rotz[pose[[4]]]]**mat2quat[roty[pose[[5]]]]**mat2quat[rotx[pose[[6]]]]]]
+poseTros[poseq_]:=translate[poseq[[;;3]]].quat2mat[poseq[[4;;]]]//N
+poseT[pose_]:=poseTros[poseEuler2Quat[pose]]
+
+(* %% *)
+(* baseTend側 *)
+(pose1 = poseT@{0.3, 0.0, 0.3, Pi/6, Pi/8, Pi/12})//MatrixForm
+
+(* %% *)
+pose2 = poseT@{0.25, 0.1, 0.4, -Pi/6, Pi/6,0};
+
+(* %% *)
+pose3 = poseT@{0.4, -0.3, 0.2, Pi/100, Pi/120, Pi/6};
+
+(* %% *)
+pose4 = poseT@{0.28, 0.3, 0.1, -Pi/110, -Pi/12, 0};
+
+(* %% *)
+pose5 = poseT@{0.5, 0.2, 0.05, -Pi/8, Pi/3, Pi/4};
+
+(* %% *)
+pose6 = poseT@{0.45, -0.15, 0.35, Pi/12, -Pi/9, -Pi/8};
+
+(* %% *)
+poses={pose1,pose2,pose3,pose4,pose5,pose6};
+
+(* %% *)
+(* intrinsic parametersの例 *)
+intrParam = {fx->1001, fy->1002, cx->500, cy->499}
+
+(* %% *)
+(* baseTcamあるいはcamTbaseを求めることが目的。ans[[1]]はbaseTcamのp部分。ans[[2]]はbaseTcamのrx,ry,rz。
+  ans[[3]]は、handTmarkerのp部分 ^{hand}p。マーカーは代表点の画像上での2次元位置しか使用しないため n,o,a部分は不要(推定できない) *)
+
+(* %% *)
+(* baseTcam側 *)
+(* 初期値 *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2])[[;;3,;;3]],{3,2,1}]
+
+(* %% *)
+initQuat = mat2quat[roty[Pi/2]]**mat2quat[rotz[-Pi/2]]
+
+(* %% *)
+param2quat[p_]:=initQuat**Quaternion[Sqrt[1-(p[[1]]^2+p[[2]]^2+p[[3]]^2)],p[[1]],p[[2]],p[[3]]]
+
+(* %% *)
+camTbase[ans1_] := quat2mat[Conjugate[param2quat[ans1[[2]]]]].translate[-ans1[[1]]]
+
+(* %% *)
+camTbase[{{-0.2,-0.1,0.3},{0,0,0}}]//MatrixForm
+
+(* %% *)
+(ans1quat = Conjugate[initQuat]**Apply[NonCommutativeMultiply,mat2quat/@{rotz[-92Degree],roty[3Degree],rotx[-88Degree]}])//N
+
+(* %% *)
+ans1 = {{-0.22,-0.13,0.29},Apply[List,ans1quat][[2;;]],{-0.11, 0.12, 0.15}}//N
+
+(* %% *)
+camTbase[ans1]//MatrixForm
+
+(* %% *)
+(* データセットのpose1とans1から ^{base}p = baseThand . ^{hand} p を求める例 *)
+pose1.Append[ans1[[3]],1]
+
+(* %% *)
+(* データセットのpose1とans1から ^{camera}p = camTbase . baseThand . ^{hand}p を求める例 *)
+camTbase[ans1].pose1.Append[ans1[[3]],1]
+
+(* %% *)
+(* カメラから見たマーカーの位置のZ座標が、すべてそれらしいあたいかどうか確認する *)
+(camTbase[ans1].#.Append[ans1[[3]],1])[[3]]&/@poses
+
+(* %% *)
+(* カメラパラメーターをintrParamに具体化したホモグラフィー変換 *)
+homoParam1[p_]=DownValues[homo][[1]][[2]]/.intrParam
+
+(* %% *)
+homoParam1[camTbase[ans1].pose1.Append[ans1[[3]],1]]//Round
+
+(* %% *)
+DownValues[homoParam1]
+
+(* %% *)
+poseUv = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+poseUvFloat = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1]])&/@ poses
+
+(* %% *)
+ans1
+
+(* %% *)
+variables = {{camx, camy, camz},{camqx,camqy,camqz},{markx,marky,markz}}
+
+(* %% *)
+((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@pose1 - poseUv[[1]])//Dimensions
+
+(* %% *)
+Apply[Plus,#^2&/@#]&/@{{a,b},{c,d}}//(Apply[Plus,#]&)
+
+(* %% *)
+MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Dimensions
+
+(* %% *)
+MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Flatten//Dimensions
+
+(* %% *)
+residualVector1 = Flatten[MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]];
+
+(* %% *)
+sseFromResi = Apply[Plus,#^2&/@ residualVector1];
+
+(* %% *)
+(Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//Dimensions
+
+(* %% *)
+sse =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//(Apply[Plus,#]&);
+
+(* %% *)
+sseFloat =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUvFloat}])//(Apply[Plus,#]&);
+
+(* %% *)
+Flatten[variables]
+
+(* %% *)
+MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]
+
+(* %% *)
+FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]]
+
+(* %% *)
+variables/.(FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]][[2]])
+
+(* %% *)
+result1 = FindMinimum[sseFromResi,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]]
+
+(* %% *)
+ans1//N
+
+(* %% *)
+FindMinimum[sse,Flatten[variables],Method->"QuasiNewton"]
+
+(* %% *)
+FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}],Method->"QuasiNewton"]
+
+(* %% *)
+residualJacobi = D[residualVector1,{Flatten[variables]}];
+
+(* %% *)
+residualJacobi//Dimensions
+
+(* %% *)
+svl = SingularValueList[residualJacobi/.result1[[2]]];
+
+(* %% *)
+svl
+
+(* %% *)
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,-0.1,0.1}}]]
+
+(* %% *)
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,0,0}}]]
+
+(* %% *)
+FindMinimum[sseFloat, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,-0.1,0.1}}]]
+
+(* %% *)
+newStartValues = {camx, camy, camz, camqx,camqy, camqz, markx, marky, markz}/.%[[2]]
+
+(* %% *)
+MapThread[#1->#2&,{Flatten[variables],Flatten[ans1]}]
+
+(* %% *)
+sse/.MapThread[#1->#2&,{Flatten[variables],Flatten[ans1]}]
+
+(* %% *)
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},newStartValues}],MaxIterations->100]
+
+(* %% *)
+(* 
+
+ 以下実データでのテスト。ここで一旦データ読込ノートブックに移動して本ノートブックのカーネルを選択して評価。そこで得られたposeDataSelectedとuvDataSetectedを使って本ノートブックで処理続行
+
+
+*)
+
+(* %% *)
+poseDataSet00 = Mean@#[[;;,2]]&/@poseDataSelected;
+
+(* %% *)
+ros2quat[r_]:=Quaternion[r[[4]],r[[1]],r[[2]],r[[3]]]
+
+(* %% *)
+poseDataSet = translate[#[[;;3]]].quat2mat[ros2quat[#[[4;;]]]]&/@poseDataSet00;
+
+(* %% *)
+uvDataSet00 = Mean@#[[;;,2]]&/@uvDataSelected
+
+(* %% *)
+(* intrinsic parameters of Intel RealSense D435i read by rs-enumerate-devices *)
+intrParamRS435i = {fx->915.4345703125, fy->913.794616699219, cx->629.752746582031, cy->356.769989013672}
+
+(* %% *)
+uvDataSet = #-{cx,cy}&/@uvDataSet00/.intrParamRS435i
+
+(* %% *)
+homoParamRS435i[p_]=DownValues[homo][[1]][[2]]/.intrParamRS435i
+
+(* %% *)
+DownValues[homoParamRS435i]
+
+(* %% *)
+Dimensions/@{uvDataSet,poseDataSet}
+
+(* %% *)
+Dimensions/@{poseUv,poses}
+
+(* %% *)
+sseData =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParamRS435i[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poseDataSet,uvDataSet}])//(Apply[Plus,#]&);
+
+(* %% *)
+resRealSense = FindMinimum[sseData, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,0,0}}]]
+
+(* %% *)
+camTbaseRS = camTbase[{{camx,camy,camz},{camqx,camqy,camqz}}]/.resRealSense[[2]]
+
+(* %% *)
+Inverse[%]//MatrixForm
+
+(* %% *)
+%//MatrixForm
+
+(* %% *)
+uvDataSet[[;;6]]
+
+(* %% *)
+poseDataSet[[;;6,;;3,4]]
+
+(* %% *)
+camTbaseRS.{0,0,0,1}
+
+(* %% *)
+homoParamRS435i[camTbaseRS.{0,0,0,1}]
+
+(* %% *)
+bTp = #.{markx,marky,markz,1}&/@poseDataSet/.resRealSense[[2]]
+
+(* %% *)
+homoParamRS435i[camTbaseRS.#]&/@bTp
+
+(* %% *)
+uvDataSet
+
+(* %% *)
+homoParamRS435i[camTbaseRS.#]&/@bTp - uvDataSet
+
+(* %% *)
+ListPointPlot3D[bTp[[;;,;;3]]]
+
+(* %% *)
+ListPlot[uvDataSet]
+
+(* %% *)
+ListPlot[poseUv]
+
+(* %% *)

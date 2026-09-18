@@ -1,0 +1,452 @@
+(* -*- coding: utf-8 -*-
+(* --- *)
+(* jupyter: *)
+(*   jupytext: *)
+(*     text_representation: *)
+(*       extension: .wolfram *)
+(*       format_name: percent *)
+(*       format_version: '1.3' *)
+(*       jupytext_version: 1.19.5 *)
+(*   kernelspec: *)
+(*     display_name: Wolfram Language 15 *)
+(*     language: Wolfram Language *)
+(*     name: wolframlanguage15 *)
+(* --- *)
+
+(* %% *)
+(* アームの先端に付けたマーカーから、カメラposeとマーカー取り付け位置を同時推定する *)
+
+(* %% *)
+<<Isometry3`
+
+(* %% *)
+(* camTbase = rotx[-camRx].roty[-camRy].rotz[-camRz].translate[-{camx,camy,camz}] *)
+
+(* %% *)
+(* handtmarker = translate[{markerx,markery,markerz}].rotz[markerRz].roty[markerRy].rotz[markerRz] *)
+
+(* %% *)
+homo[p_] := { fx p[[1]]/p[[3]] + cx, fy p[[2]] / p[[3]] + cy}
+
+(* %% *)
+initQuat = mat2quat[roty[Pi/2]]**mat2quat[rotz[-Pi/2]]
+
+(* %% *)
+param2quat[p_]:=initQuat**Quaternion[Sqrt[1-(p[[1]]^2+p[[2]]^2+p[[3]]^2)],p[[1]],p[[2]],p[[3]]]
+
+(* %% *)
+(* posex[[1;;3]]が baseThandのtranslation部分。posex[[4;;6]]が同rz, ry, rx *)
+
+(* %% *)
+pose1x = {0.3, 0.0, 0.3, Pi/6, Pi/8, Pi/12}
+
+(* %% *)
+(mat2quat[rotz[pose1x[[4]]]]**mat2quat[roty[pose1x[[5]]]]**mat2quat[rotx[pose1x[[6]]]])//N
+
+(* %% *)
+(pose1q = Conjugate[initQuat] ** mat2quat[rotz[pose1x[[4]]]]**mat2quat[roty[pose1x[[5]]]]**mat2quat[rotx[pose1x[[6]]]])//N
+
+(* %% *)
+Apply[List,pose1q[[2;;]]]//N
+
+(* %% *)
+param2quat[Apply[List,pose1q[[2;;]]]]//N
+
+(* %% *)
+(* pose1, pose2, ... , poseNはロボットのbaseからendへの座標変換。計測uv値毎に対応したものが存在する前提 *)
+(* テスト問題用に、以下、pose1, pose2, pose3, pose4, pose5, pose6 の具体的な値を定義する *)
+
+(* %% *)
+(pose1 = Join[pose1x[[;;3]],Apply[List,pose1q[[2;;]]]])//N
+
+(* %% *)
+pose6to7[p6_]:=Join[p6[[;;3]],Apply[List,mat2quat[rotz[p6[[4]]]]**mat2quat[roty[p6[[5]]]]**mat2quat[rotx[p6[[6]]]]]]
+
+(* %% *)
+pose6to6[p6_]:=Join[p6[[;;3]],Apply[List,Conjugate[initQuat] ** mat2quat[rotz[p6[[4]]]]**mat2quat[roty[p6[[5]]]]**mat2quat[rotx[p6[[6]] ]] ][[2;;]] ]
+
+(* %% *)
+pose6to7[pose1x]//N
+
+(* %% *)
+pose1 =pose6to6@pose1x//N
+
+(* %% *)
+pose2 =pose6to6@ {0.25, 0.1, 0.4, -Pi/6, Pi/6,0}//N;
+
+(* %% *)
+pose3 =pose6to6@{0.4, -0.3, 0.2, Pi/100, Pi/120, Pi/6}//N;
+
+(* %% *)
+pose4 = pose6to6@{0.28, 0.3, 0.1, -Pi/110, -Pi/12, 0}//N;
+
+(* %% *)
+pose5 =pose6to6@{0.5, 0.2, 0.05, -Pi/8, Pi/3, Pi/4}//N;
+
+(* %% *)
+pose6 = pose6to6@{0.45, -0.15, 0.35, Pi/12, -Pi/9, -Pi/8}//N;
+
+(* %% *)
+{pose1,pose2,pose3,pose4,pose5,pose6}//N//MatrixForm
+
+(* %% *)
+(* intrinsic parametersの例 *)
+intrParam = {fx->1001, fy->1002, cx->500, cy->499}
+
+(* %% *)
+(* baseTcamあるいはcamTbaseを求めることが目的。ans[[1]]はbaseTcamのp部分。ans[[2]]はbaseTcamのrx,ry,rz。
+  ans[[3]]は、handTmarkerのp部分 ^{hand}p。マーカーは代表点の画像上での2次元位置しか使用しないため n,o,a部分は不要(推定できない) *)
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2])[[;;3,;;3]],{3,2,1}]
+
+(* %% *)
+Apply[List,Apply[NonCommutativeMultiply,mat2quat/@{rotz[-92Degree],roty[3Degree],rotx[-88Degree]}]]//N
+
+(* %% *)
+quat2mat[%]
+
+(* %% *)
+(ans1 = {{-0.2,-0.1,0.3},Apply[List,Apply[NonCommutativeMultiply,mat2quat/@{rotz[-92Degree],roty[3Degree],rotx[-88Degree]}]][[2;;]],{-0.11, 0.12, 0.15}})//N
+
+(* %% *)
+Conjugate[param2quat[ans1[[2]]]]//N
+
+(* %% *)
+camTbase[ans1_] := quat2mat[Conjugate[param2quat[ans1[[2]] ]]].translate[-ans1[[1]]]
+
+(* %% *)
+mat2quat[rotz[-Pi/2]]**mat2quat[rotx[-Pi/2]]
+
+(* %% *)
+param2quat[{0,0,0}]
+
+(* %% *)
+camTbase[{{-0.2,-0.1,0.3},{0,0,0}}]//MatrixForm
+
+(* %% *)
+camTbase[ans1]//MatrixForm
+
+(* %% *)
+(* データセットのpose1とans1から ^{base}p = baseThand . ^{hand} p を求める例 *)
+pose1//N
+
+(* %% *)
+(* データセットとしてのposeを座標変換行列 baseThand にする関数 *)
+poseT[pose_]:=translate[pose[[;;3]]].quat2mat[initQuat**param2quat[pose[[4;;]]]]
+
+(* %% *)
+DownValues[poseT]
+
+(* %% *)
+(* データセットのpose1とans1から ^{base}p = baseThand . ^{hand} p を求める例 *)
+poseT[pose1].Append[ans1[[3]],1]//N
+
+(* %% *)
+(* データセットのpose1とans1から ^{camera}p = camTbase . baseThand . ^{hand}p を求める例 *)
+camTbase[ans1].poseT[pose1].Append[ans1[[3]],1]
+
+(* %% *)
+poses = {pose1,pose2,pose3,pose4,pose5,pose6};
+
+(* %% *)
+(* カメラから見たマーカーの位置のZ座標が、すべてそれらしいあたいかどうか確認する *)
+(camTbase[ans1].poseT[#].Append[ans1[[3]],1])[[3]]&/@poses
+
+(* %% *)
+(* カメラパラメーターをintrParamに具体化したホモグラフィー変換 *)
+homoParam1[p_]=DownValues[homo][[1]][[2]]/.intrParam
+
+(* %% *)
+homoParam1[camTbase[ans1].poseT[pose1].Append[ans1[[3]],1]]//Round
+
+(* %% *)
+DownValues[homoParam1]
+
+(* %% *)
+poseUv = (homoParam1[camTbase[ans1].poseT[#].Append[ans1[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+ans1
+
+(* %% *)
+variables = {{camx, camy, camz},{camqw,camqx,camqy,camqz},{markx,marky,markz}}
+
+(* %% *)
+((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@pose1 - poseUv[[1]])//Dimensions
+
+(* %% *)
+Apply[Plus,#^2&/@#]&/@{{a,b},{c,d}}//(Apply[Plus,#]&)
+
+(* %% *)
+MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Dimensions
+
+(* %% *)
+MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Flatten//Dimensions
+
+(* %% *)
+residualVector1 = Flatten[MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]];
+
+(* %% *)
+sseFromResi = Apply[Plus,#^2&/@ residualVector1];
+
+(* %% *)
+(Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//Dimensions
+
+(* %% *)
+sse =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//(Apply[Plus,#]&);
+
+(* %% *)
+Flatten[variables]
+
+(* %% *)
+MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]
+
+(* %% *)
+FindMinimum[{sse,camqw^2+camqx^2+camqy^2+camqz^2==1},MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]]
+
+(* %% *)
+FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]]
+
+(* %% *)
+variables/.(FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]][[2]])
+
+(* %% *)
+result1 = FindMinimum[sseFromResi,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}]]
+
+(* %% *)
+ans1//N
+
+(* %% *)
+FindMinimum[sse,Flatten[variables],Method->"QuasiNewton"]
+
+(* %% *)
+FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}],Method->"QuasiNewton"]
+
+(* %% *)
+residualJacobi = D[residualVector1,{Flatten[variables]}];
+
+(* %% *)
+residualJacobi//Dimensions
+
+(* %% *)
+svl = SingularValueList[residualJacobi/.result1[[2]]];
+
+(* %% *)
+svl
+
+(* %% *)
+FindMinimum[sse, Flatten[variables]]
+
+(* %% *)
+FindMinimum[sse, Transpose[{{camx, camy, camz, camrx,camry, camrz, markx, marky, markz},{ -0.1,0, 0.2,-1.5,0.05, -1.5, -0.15, 0.12, 0.2}}]]
+
+(* %% *)
+ans2 = {ans1[[1]],ans1[[2]],{0,0,0}}
+
+(* %% *)
+poseUv2 = (homoParam1[camTbase[ans2].poseT[#].Append[ans2[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+variables2 = {variables[[1]],variables[[2]],{0,0,0}}
+
+(* %% *)
+sse2 =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables2].poseT[#].Append[variables2[[3]],1]])&@#1 - #2)&,{poses,poseUv2}])//(Apply[Plus,#]&);
+
+(* %% *)
+residualVector2 = Flatten[MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv2}]];
+
+(* %% *)
+Dimensions[residualVector2]
+
+(* %% *)
+sseFromResi2 = Expand[Apply[Plus,#^2&/@ residualVector2]];
+
+(* %% *)
+Flatten[variables]
+
+(* %% *)
+(* **** NG **** *)
+FindMinimum[sse2,Flatten[variables2][[;;6]]]
+
+(* %% *)
+FindMinimum[sse2,Transpose[{Flatten[variables2][[;;6]], {0,0,0.2, -Pi/2,0,-Pi/2}}]]
+
+(* %% *)
+FindMinimum[sseFromResi2,Transpose[{Flatten[variables], {0,0,0.2, -Pi/2,0,-Pi/2, 0,0,0}}]]
+
+(* %% *)
+ans2//N
+
+(* %% *)
+ans1a = {ans1[[1]],{-80Degree,-4Degree,-92Degree},ans1[[3]]}
+
+(* %% *)
+poseUv1a = (homoParam1[camTbase[ans1a].poseT[#].Append[ans1a[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+sse1a =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv1a}])//(Apply[Plus,#]&);
+
+(* %% *)
+residualVector1a = Flatten[MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv1a}]];
+
+(* %% *)
+sseFromResi1a = Apply[Plus,#^2&/@ residualVector1a];
+
+(* %% *)
+result1a = FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/10]//N//Flatten}]]
+
+(* %% *)
+MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}]
+
+(* %% *)
+FindMinimum[sse1a,%]
+
+(* %% *)
+residualJacobi1a = D[residualVector1a,{Flatten[variables]}];
+
+(* %% *)
+svl1a = SingularValueList[residualJacobi1a/.result1a[[2]]]
+
+(* %% *)
+ans1a//N
+
+(* %% *)
+FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}]]
+
+(* %% *)
+FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}],MaxIterations->1000]
+
+(* %% *)
+FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}],Method->"ConjugateGradient"]
+
+(* %% *)
+FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}],Method->"QuasiNewton"]
+
+(* %% *)
+Transpose[{Flatten[variables],Flatten[variables]/.%[[2]]}]
+
+(* %% *)
+FindMinimum[sse1a,%,Method->"Newton"]
+
+(* %% *)
+FindMinimum[sse1a,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1a,1/2]//N//Flatten}],Method -> {"LevenbergMarquardt", "Jacobian" -> "Symbolic"}]
+
+(* %% *)
+(* 計算停止位置でのヤコビ行列を見てみる *)
+
+
+(* %% *)
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]],{3,2,1}]//N
+
+(* %% *)
+ans1b = {{-0.21, 0.13, 0.27},%,{-0.15, -0.02, 0.10}}
+
+(* %% *)
+poseUv1b = (homoParam1[camTbase[ans1b].poseT[#].Append[ans1b[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+sse1b =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv1b}])//(Apply[Plus,#]&);
+
+(* %% *)
+FindMinimum[sse1b,MapThread[{#1,#2}&,{Flatten[variables],{0,0,0.1, 0,2,-1.5, 0,0,0}}]]
+
+(* %% *)
+FindMinimum[sse1b,MapThread[{#1,#2}&,{Flatten[variables],{-0.1,0.1,0.2, 0,2,-1.5, 0,0,0}}]]
+
+(* %% *)
+(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]]//N//MatrixForm
+
+(* %% *)
+roty[Pi/2].rotz[-Pi/2]//MatrixForm
+
+(* %% *)
+roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[3Degree]//N//MatrixForm
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[3Degree])[[;;3,;;3]]//N, {3,2,1}]
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[3Degree])[[;;3,;;3]]//N,{3,2,1}]
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]],{3,2,1}]//N
+
+(* %% *)
+ans1a
+
+(* %% *)
+ans1b
+
+(* %% *)
+(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]]//N//MatrixForm
+
+(* %% *)
+(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[3Degree])[[;;3,;;3]]//N//MatrixForm
+
+(* %% *)
+rotz[-1.70572].roty[-0.0360284].rotx[-2.09196]//MatrixForm
+
+(* %% *)
+ans1a
+
+(* %% *)
+poseUv1a
+
+(* %% *)
+poseUv1b
+
+(* %% *)
+EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]]//N]
+
+(* %% *)
+ans1b
+
+(* %% *)
+ans1c = {ans1b[[1]],EulerAngles[(roty[Pi/2].rotz[-Pi/2].rotx[-15Degree].roty[8Degree].rotx[-15Degree])[[;;3,;;3]]//N],ans1b[[3]]}
+
+(* %% *)
+poseUv1c = (homoParam1[camTbase[ans1c].poseT[#].Append[ans1c[[3]],1]]//Round)&/@ poses
+
+(* %% *)
+sse1c =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].poseT[#].Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv1c}])//(Apply[Plus,#]&);
+
+(* %% *)
+FindMinimum[sse1c,MapThread[{#1,#2}&,{Flatten[variables],{0,0,0.1, 0,2,-1.5, 0,0,0}}]]
+
+(* %% *)
+FindMinimum[sse1c,MapThread[{#1,#2}&,{Flatten[variables],{-0.2,0.1,0.3,-0.16,2.10,-1.60,-0.1,-0.0,0.1}}]]
+
+(* %% *)
+FindMinimum[sse1c,MapThread[{#1,#2}&,{Flatten[variables],{-0.1,0.0,0.3,-0.1,2.0,-1.30,-0.0,-0.0,0.1}}]]
+
+(* %% *)
+FindMinimum[sse1c,MapThread[{#1,#2}&,{Flatten[variables],{-0.2,0.1,0.3, -0.15,2.0,-1.50, -0.1,-0.0,0.1}}]]
+
+(* %% *)
+(* Euler angleでは別の解に収束しがちなためquaternionに変更 *)
+
+(* %% *)
+Quaternion[1,2,3,4]**Quaternion[a,b,c,d]
+
+(* %% *)
+roty[Pi/2].rotz[-Pi/2]//MatrixForm
+
+(* %% *)
+mat2quat[roty[Pi/2]]**mat2quat[rotz[-Pi/2]]
+
+(* %% *)
+quat2mat[%]
+
+(* %% *)
+camTbaseQ[ans_] := rotx[-ans1[[2,1]]].roty[-ans1[[2,2]]].rotz[ans1[[2,3]]].translate[-ans1[[1]]]
+
+(* %% *)
+quat2mat[-Quaternion[1/2,-1/2,1/2,-1/2]]
+
+(* %% *)
+quat2mat[-1/2Quaternion[1,-1,1,-1]]
+
+(* %% *)

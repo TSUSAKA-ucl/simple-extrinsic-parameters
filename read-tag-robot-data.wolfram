@@ -1,0 +1,160 @@
+(* -*- coding: utf-8 -*-
+(* --- *)
+(* jupyter: *)
+(*   jupytext: *)
+(*     text_representation: *)
+(*       extension: .wolfram *)
+(*       format_name: percent *)
+(*       format_version: '1.3' *)
+(*       jupytext_version: 1.19.5 *)
+(*   kernelspec: *)
+(*     display_name: Wolfram Language 15 *)
+(*     language: Wolfram Language *)
+(*     name: wolframlanguage15 *)
+(* --- *)
+
+(* %% *)
+Directory[]
+
+(* %% *)
+SetDirectory@"Bag-csv"
+
+(* %% *)
+armStatus = Import["rosbag2_2026_09_16-15_56_51-arm_status.csv"];
+
+(* %% *)
+armStatus[[;;2]]
+
+(* %% *)
+ListPlot[armStatus[[;;,5]]]
+
+(* %% *)
+tcpPose = Import["rosbag2_2026_09_16-15_56_51-tcp_pose.csv"];
+
+(* %% *)
+tcpPose[[;;3]]
+
+(* %% *)
+Length@tcpPose == Length@armStatus
+
+(* %% *)
+(* armStatusにはタイムスタンプが無いため、tcpPoseとLengthが同一であることを確認してから一旦tcpPoseの後ろに付ける *)
+tcpPoseStatus = Transpose[Append[Transpose[tcpPose], armStatus[[;;,5]]]];
+
+(* %% *)
+(* グラフの横軸が見づらいため、Epochタイムから経過時間に変更する *)
+startTime = tcpPose[[1,1]]
+
+(* %% *)
+statusData = {#[[1]]+#[[2]]/10^9-startTime, #[[11]]}&/@tcpPoseStatus;
+
+(* %% *)
+poseData={#[[1]]+#[[2]]/10^9-startTime, #[[4;;]]}&/@tcpPose;
+
+(* %% *)
+xData = {#[[1]],#[[2,1]]}&/@poseData;
+
+(* %% *)
+gr1 = ListPlot[{xData,statusData},Joined->True]
+
+(* %% *)
+apriltag = Import["rosbag2_2026_09_16-15_56_51-apriltag_detections.csv"];
+
+(* %% *)
+apriltag[[;;3]]
+
+(* %% *)
+Partition[#,3]&/@apriltag[[;;3]]
+
+(* %% *)
+apriltagPat = Partition[#,3]&/@apriltag;
+
+(* %% *)
+(* タイムスタンプとタグ番号0のデータだけ取り出し他のタグ番号のデータは捨て、#[[2]]があれば必ずタグ番号0となる *)
+apriltagZeroX = Select[#, #[[1]]==0 || #[[1]]>10^9 &]&/@apriltagPat;
+
+(* %% *)
+(* タグ番号0が存在している時刻のデータだけ取り出す *)
+apriltagZero = Select[apriltagZeroX, Length@# >= 2&];
+
+(* %% *)
+uvData =  {#[[1,1]]+#[[1,2]]/10^9-startTime, #[[2,2;;]]}&/@apriltagZero;
+
+(* %% *)
+uvData[[;;3]]
+
+(* %% *)
+uData1000 = {#[[1]],#[[2,1]]/1000}&/@uvData;
+
+(* %% *)
+vData1000 = {#[[1]],#[[2,2]]/1000}&/@uvData;
+
+(* %% *)
+ListPlot[{xData,statusData,uData1000,vData1000},Joined->False]
+
+(* %% *)
+(* armStatusの値が変化するところで分割する *)
+statusDataSplitted = SplitBy[statusData,#[[2]]&];
+
+(* %% *)
+Dimensions@statusDataSplitted
+
+(* %% *)
+statusDataSplitted[[3,;;3,2]]
+
+(* %% *)
+(* 分割した中からarmStatusが停止(到着?)になっているグループだけとりだす *)
+statusZeroData = Select[statusDataSplitted,#[[1,2]]==0&];
+
+(* %% *)
+Dimensions@statusZeroData
+
+(* %% *)
+Dimensions@apriltagZero
+
+(* %% *)
+{#[[1,1]],#[[-1,1]]}&@statusZeroData[[3]]
+
+(* %% *)
+(* statusで分解したグループのタイムスタンプを使って apriltagのデータをグループ毎に取り出す(分割される) *)
+uvDataSelected = Apply[Function[{from,to},Select[uvData,from+8/10 <= #[[1]] && #[[1]] < to-2/10&]],{#[[1,1]],#[[-1,1]]}&@#]&/@statusZeroData;
+
+(* %% *)
+Dimensions/@uvDataSelected
+
+(* %% *)
+uvDataSelected[[3,;;2]]
+
+(* %% *)
+{Mean@#, StandardDeviation@#}&@#[[;;,2]]&/@uvDataSelected
+
+(* %% *)
+(* uvの散らばり最大値最小値差を見る。最大0.47pixelなので問題ないとする *)
+((#[[2]]-#[[1]])&@MinMax@#)&/@Transpose[#[[;;,2]]]&/@uvDataSelected//MatrixForm
+
+(* %% *)
+poseData[[;;3]]
+
+(* %% *)
+(* apriltag同様にarm姿勢も分割する *)
+poseDataSelected = Apply[Function[{from,to},Select[poseData,from+8/10 <= #[[1]] && #[[1]] < to-2/10&]],{#[[1,1]],#[[-1,1]]}&@#]&/@statusZeroData;
+
+(* %% *)
+Dimensions/@poseDataSelected
+
+(* %% *)
+(* 分割したグループ内の標準偏差を見て静止していることを確認する *)
+StandardDeviation@#[[;;,2]]&/@poseDataSelected//MatrixForm
+
+(* %% *)
+poseDataSelected[[;;3,1;;2]]
+
+(* %% *)
+poseDataSelected[[1,;;3,2]]
+
+(* %% *)
+(* poseの散らばり最大値最小値差を見る。最大0.001×2radなので問題ないとする *)
+((#[[2]]-#[[1]])&@MinMax@#)&/@Transpose[#[[;;,2]]]&/@poseDataSelected//MatrixForm
+
+(* %% *)
+Mean@#[[;;,2]]&/@poseDataSelected//MatrixForm

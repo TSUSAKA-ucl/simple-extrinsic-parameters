@@ -15,6 +15,7 @@
 
 (* %% *)
 (* アームの先端に付けたマーカーから、カメラposeとマーカー取り付け位置を同時推定する *)
+(* 焦点距離も同時推定にする *)
 
 (* %% *)
 <<Isometry3`
@@ -62,7 +63,7 @@ poses={pose1,pose2,pose3,pose4,pose5,pose6};
 
 (* %% *)
 (* intrinsic parametersの例 *)
-intrParam = {fx->1001, fy->1002, cx->500, cy->499}
+intrinsicParam = {fx->focalLength, fy->focalLength, cx->500, cy->499}
 
 (* %% *)
 (* baseTcamあるいはcamTbaseを求めることが目的。ans[[1]]はbaseTcamのp部分。ans[[2]]はbaseTcamのrx,ry,rz。
@@ -89,10 +90,13 @@ camTbase[ans1_] := quat2mat[Conjugate[param2quat[ans1[[2]]]]].translate[-ans1[[1
 camTbase[{{-0.2,-0.1,0.3},{0,0,0}}]//MatrixForm
 
 (* %% *)
-(ans1quat = Conjugate[initQuat]**Apply[NonCommutativeMultiply,mat2quat/@{rotz[-92Degree],roty[3Degree],rotx[-88Degree]}])//N
+(ans1quat = Conjugate[initQuat]**Apply[NonCommutativeMultiply,mat2quat/@{rotz[-92Degree],roty[3Degree],rotx[-111Degree]}])//N
 
 (* %% *)
-ans1 = {{-0.22,-0.13,0.29},Apply[List,ans1quat][[2;;]],{-0.11, 0.12, 0.15}}//N
+(* **** テスト用の正解値 **** *)
+(* baseTcam.{0,0,0,1}===カメラ原点 ,  baseQcam===カメラ姿勢(3parameters), endTmark.{0,0,0,1}===marker原点, focalLength *)
+(* *********************** *)
+ans1 = {{-0.22,-0.13,0.29},Apply[List,ans1quat][[2;;]],{-0.11, 0.12, 0.15}, 999.0}//N
 
 (* %% *)
 camTbase[ans1]//MatrixForm
@@ -110,53 +114,56 @@ camTbase[ans1].pose1.Append[ans1[[3]],1]
 (camTbase[ans1].#.Append[ans1[[3]],1])[[3]]&/@poses
 
 (* %% *)
-(* カメラパラメーターをintrParamに具体化したホモグラフィー変換 *)
-homoParam1[p_]=DownValues[homo][[1]][[2]]/.intrParam
+DownValues[homoParam1]=.
 
 (* %% *)
-homoParam1[camTbase[ans1].pose1.Append[ans1[[3]],1]]//Round
-
-(* %% *)
-DownValues[homoParam1]
-
-(* %% *)
-poseUv = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1]]//Round)&/@ poses
-
-(* %% *)
-poseUvFloat = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1]])&/@ poses
+(* カメラパラメーターをintrinsicParamに具体化したホモグラフィー変換 *)
+homoParam1[p_,f_]=(DownValues[homo][[1]][[2]]/.intrinsicParam)/.focalLength->f
 
 (* %% *)
 ans1
 
 (* %% *)
-variables = {{camx, camy, camz},{camqx,camqy,camqz},{markx,marky,markz}}
+homoParam1[camTbase[ans1].pose1.Append[ans1[[3]],1],ans1[[4]]]//Round
 
 (* %% *)
-((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@pose1 - poseUv[[1]])//Dimensions
+DownValues[homoParam1]
+
+(* %% *)
+poseUv = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1],ans1[[4]]]//Round)&/@ poses
+
+(* %% *)
+poseUvFloat = (homoParam1[camTbase[ans1].#.Append[ans1[[3]],1],ans1[[4]]])&/@ poses
+
+(* %% *)
+variables = {{camx, camy, camz},{camqx,camqy,camqz},{markx,marky,markz}, fLength}
+
+(* %% *)
+((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@pose1 - poseUv[[1]])//Dimensions
 
 (* %% *)
 Apply[Plus,#^2&/@#]&/@{{a,b},{c,d}}//(Apply[Plus,#]&)
 
 (* %% *)
-MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Dimensions
+MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUv}]//Dimensions
 
 (* %% *)
-MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]//Flatten//Dimensions
+MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUv}]//Flatten//Dimensions
 
 (* %% *)
-residualVector1 = Flatten[MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}]];
+residualVector1 = Flatten[MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUv}]];
 
 (* %% *)
 sseFromResi = Apply[Plus,#^2&/@ residualVector1];
 
 (* %% *)
-(Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//Dimensions
+(Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUv}])//Dimensions
 
 (* %% *)
-sse =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUv}])//(Apply[Plus,#]&);
+sse =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUv}])//(Apply[Plus,#]&);
 
 (* %% *)
-sseFloat =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poses,poseUvFloat}])//(Apply[Plus,#]&);
+sseFloat =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParam1[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poses,poseUvFloat}])//(Apply[Plus,#]&);
 
 (* %% *)
 Flatten[variables]
@@ -183,6 +190,9 @@ FindMinimum[sse,Flatten[variables],Method->"QuasiNewton"]
 FindMinimum[sse,MapThread[{#1,#2}&,{Flatten[variables],Round[ans1,1/10]//N//Flatten}],Method->"QuasiNewton"]
 
 (* %% *)
+ans1
+
+(* %% *)
 residualJacobi = D[residualVector1,{Flatten[variables]}];
 
 (* %% *)
@@ -195,16 +205,16 @@ svl = SingularValueList[residualJacobi/.result1[[2]]];
 svl
 
 (* %% *)
-FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,-0.1,0.1}}]]
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz, fLength},{ 0,0,0 ,0,0,0, 0,-0.1,0.1,900}}]]
 
 (* %% *)
-FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,0,0}}]]
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz, fLength},{ 0,0,0 ,0,0,0, 0,0,0, 1100}}]]
 
 (* %% *)
-FindMinimum[sseFloat, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,-0.1,0.1}}]]
+FindMinimum[sseFloat, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz, fLength},{ 0,0,0 ,0,0,0, 0,-0.1,0.1, 900}}]]
 
 (* %% *)
-newStartValues = {camx, camy, camz, camqx,camqy, camqz, markx, marky, markz}/.%[[2]]
+newStartValues = {camx, camy, camz, camqx,camqy, camqz, markx, marky, markz, fLength}/.%[[2]]
 
 (* %% *)
 MapThread[#1->#2&,{Flatten[variables],Flatten[ans1]}]
@@ -213,7 +223,7 @@ MapThread[#1->#2&,{Flatten[variables],Flatten[ans1]}]
 sse/.MapThread[#1->#2&,{Flatten[variables],Flatten[ans1]}]
 
 (* %% *)
-FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},newStartValues}],MaxIterations->100]
+FindMinimum[sse, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz,fLength},newStartValues}],MaxIterations->100]
 
 (* %% *)
 (* 
@@ -236,14 +246,18 @@ poseDataSet = translate[#[[;;3]]].quat2mat[ros2quat[#[[4;;]]]]&/@poseDataSet00;
 uvDataSet00 = Mean@#[[;;,2]]&/@uvDataSelected
 
 (* %% *)
+intrinsicParam
+
+(* %% *)
 (* intrinsic parameters of Intel RealSense D435i read by rs-enumerate-devices *)
-intrParamRS435i = {fx->915.4345703125, fy->913.794616699219, cx->629.752746582031, cy->356.769989013672}
+(* intrParamRS435i = {fx->915.4345703125, fy->913.794616699219, cx->629.752746582031, cy->356.769989013672} *)
+intrParamRS435i = {fx->focalLength, fy->focalLength, cx->629.752746582031, cy->356.769989013672}
 
 (* %% *)
 uvDataSet = uvDataSet00
 
 (* %% *)
-homoParamRS435i[p_]=DownValues[homo][[1]][[2]]/.intrParamRS435i
+homoParamRS435i[p_,f_]=(DownValues[homo][[1]][[2]]/.intrParamRS435i)/.focalLength->f
 
 (* %% *)
 DownValues[homoParamRS435i]
@@ -255,10 +269,10 @@ Dimensions/@{uvDataSet,poseDataSet}
 Dimensions/@{poseUv,poses}
 
 (* %% *)
-sseData =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParamRS435i[camTbase[variables].#.Append[variables[[3]],1]])&@#1 - #2)&,{poseDataSet,uvDataSet}])//(Apply[Plus,#]&);
+sseData =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParamRS435i[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poseDataSet,uvDataSet}])//(Apply[Plus,#]&);
 
 (* %% *)
-resRealSense = FindMinimum[sseData, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz},{ 0,0,0 ,0,0,0, 0,0,0}}]]
+resRealSense = FindMinimum[sseData, Transpose[{{camx, camy, camz, camqx,camqy, camqz, markx, marky, markz, fLength},{ 0,0,0 ,0,0,0, 0,0,0, 900}}]]
 
 (* %% *)
 camTbaseRS = camTbase[{{camx,camy,camz},{camqx,camqy,camqz}}]/.resRealSense[[2]]
@@ -285,7 +299,7 @@ poseDataSet[[;;6,;;3,4]]
 camTbaseRS.{0,0,0,1}
 
 (* %% *)
-homoParamRS435i[camTbaseRS.{0,0,0,1}]
+homoParamRS435i[camTbaseRS.{0,0,0,1}, fLength/.resRealSense[[2]]]
 
 (* %% *)
 bTp = #.{markx,marky,markz,1}&/@poseDataSet/.resRealSense[[2]]
@@ -297,7 +311,7 @@ homoParamRS435i[camTbaseRS.#]&/@bTp
 uvDataSet
 
 (* %% *)
-homoParamRS435i[camTbaseRS.#]&/@bTp - uvDataSet
+homoParamRS435i[camTbaseRS.#, fLength/.resRealSense[[2]]]&/@bTp - uvDataSet
 
 (* %% *)
 ListPointPlot3D[bTp[[;;,;;3]]]
@@ -317,7 +331,7 @@ Apply[List,mat2quat[rotx[Pi/2]]**mat2quat[rotx[Pi/2]]**camQbaseRS]
 (* %% *)
 rotx[Pi].camTbaseRS.{0,0,0,1}
 
-(* %% *)
+(* %% jupyter={"source_hidden": true} *)
 quat2mat[mat2quat[rotx[Pi/2]]**mat2quat[rotx[Pi/2]]**camQbaseRS]//MatrixForm
 
 (* %% *)
@@ -327,14 +341,19 @@ mat2quat[rotx[Pi/2]]**mat2quat[rotx[Pi/2]]
 quat2mat[{0,1,0,0}]//Inverse
 
 (* %% *)
+(* これが、follow-cameraのposition:の値 *)
+
+quat2mat[{0,1,0,0}].camTbaseRS.{0,0,0,1}
 
 (* %% *)
 camQbase =  Conjugate[param2quat[{camqx,camqy,camqz}/.resRealSense[[2]]]]
 
 (* %% *)
+(* これが follow-cameraのquaternionだが THREE/ros風に並べ替える必要がある *)
 webQbase = Quaternion[0,1,0,0]**camQbase
 
 (* %% *)
-MatrixForm@quat2mat[webQbase]
+{webQbase[[2]],webQbase[[3]],webQbase[[4]],webQbase[[1]]}
 
 (* %% *)
+MatrixForm@quat2mat[webQbase]

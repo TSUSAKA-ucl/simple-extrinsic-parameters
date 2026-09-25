@@ -1,0 +1,144 @@
+(* -*- coding: utf-8 -*-
+(* --- *)
+(* jupyter: *)
+(*   jupytext: *)
+(*     text_representation: *)
+(*       extension: .wolfram *)
+(*       format_name: percent *)
+(*       format_version: '1.3' *)
+(*       jupytext_version: 1.19.5 *)
+(*   kernelspec: *)
+(*     display_name: Wolfram Language 15 *)
+(*     language: Wolfram Language *)
+(*     name: wolframlanguage15 *)
+(* --- *)
+
+(* %% *)
+(* アームの先端に付けたマーカーから、カメラposeとマーカー取り付け位置を同時推定する *)
+(* 焦点距離も同時推定にする *)
+
+(* %% *)
+<<Isometry3`
+
+(* %% *)
+(* baseTcamの大まかな(回転)変換。ここからの回転を求める *)
+initQuat = mat2quat[roty[Pi/2]]**mat2quat[rotz[-Pi/2]]
+
+(* %% *)
+(* cameraTscreenの変換の式定義 *)
+homo[p_] := { fx p[[1]]/p[[3]] + cx, fy p[[2]] / p[[3]] + cy}
+
+(* %% *)
+(* LM法で使う姿勢3パラメータから通常の変換quaternionへの変形定義 *)
+param2quat[p_]:=initQuat**Quaternion[Sqrt[1-(p[[1]]^2+p[[2]]^2+p[[3]]^2)],p[[1]],p[[2]],p[[3]]]
+
+(* %% *)
+(* LM法で使うパラメータ。グループ分けしたもの *)
+variables = {{camx, camy, camz},{camqx,camqy,camqz},{markx,marky,markz}, fLength}
+
+(* %% *)
+camTbase[ans1_] := quat2mat[Conjugate[param2quat[ans1[[2]]]]].translate[-ans1[[1]]]
+
+
+(* %% *)
+(* 
+================================================================
+================================================================
+実データでのキャリブレーション値の計算。
+データ読込ノートブックを評価して、そこで得られたuvDataSetectedとposeDataSelectedを使って
+本ノートブックで処理続行。以下それぞれを平均したuvDataSetとposeDataSetを使って計算する
+*)
+
+(* %% *)
+uvDataSet = Mean@#[[;;,2]]&/@uvDataSelected
+
+(* %% *)
+poseDataSet00 = Mean@#[[;;,2]]&/@poseDataSelected;
+
+(* %% *)
+ros2quat[r_]:=Quaternion[r[[4]],r[[1]],r[[2]],r[[3]]]
+
+(* %% *)
+poseDataSet = translate[#[[;;3]]].quat2mat[ros2quat[#[[4;;]]]]&/@poseDataSet00;
+
+(* %% *)
+(* データの次元を確認。n×2とn×4×4 *)
+Dimensions/@{uvDataSet,poseDataSet}
+
+(* %% *)
+(* intrinsic parameters of Intel RealSense D435i read by rs-enumerate-devices *)
+(* intrParamRS435i = {fx->915.4345703125, fy->913.794616699219, cx->629.752746582031, cy->356.769989013672} *)
+(* fx==fyとしてfocal lengthはデータから推定するため値は具体化しない *)
+intrParamRS435i = {fx->focalLength, fy->focalLength, cx->629.752746582031, cy->356.769989013672}
+
+(* %% *)
+DownValues[homo]
+
+(* %% *)
+p=.; f=.
+
+(* %% *)
+Off[Part::partd]
+homoParamRS435i[p_,f_]=(DownValues[homo][[1]][[2]]/.intrParamRS435i)/.focalLength->f
+On[Part::partd]
+
+(* %% *)
+DownValues[homoParamRS435i]
+
+(* %% *)
+(* 二乗和誤差を定義する *)
+sseData =  (Apply[Plus,#^2&/@#]&/@MapThread[((homoParamRS435i[camTbase[variables].#.Append[variables[[3]],1],variables[[4]]])&@#1 - #2)&,{poseDataSet,uvDataSet}])//(Apply[Plus,#]&);
+
+(* %% *)
+(* 適当な初期値から最小化 *)
+resRealSense = FindMinimum[sseData, Transpose[{Flatten[variables],{ 0,0,0 ,0,0,0, 0,0,0, 900}}]]
+
+(* %% *)
+camTbaseRS = camTbase[variables]/.resRealSense[[2]]
+
+(* %% *)
+Inverse[%]//MatrixForm
+
+(* %% *)
+camQbaseRS = initQuat ** Quaternion[Sqrt[1-(camqx^2+camqy^2+camqz^2)],camqx, camqy, camqz]/.resRealSense[[2]]
+
+(* %% *)
+MatrixForm@quat2mat[camQbaseRS]
+
+(* %% *)
+(* 計算結果を使って、base座標系におけるmarkerの位置を求めてみる *)
+bTp = #.{markx,marky,markz,1}&/@poseDataSet/.resRealSense[[2]]
+
+(* %% *)
+(* 各マーカーのスクリーン座標系上での偏差を計算してみる *)
+homoParamRS435i[camTbaseRS.#, fLength/.resRealSense[[2]]]&/@bTp - uvDataSet
+
+(* %% *)
+(* web(THREE.js)座標系とOpenCVカメラ座標系の変換 *)
+mat2quat[rotx[Pi/2]]**mat2quat[rotx[Pi/2]]
+
+(* %% *)
+quat2mat[{0,1,0,0}]//Inverse
+
+(* %% *)
+(* ################################## *)
+(* これが、follow-cameraのposition:の値 *)
+
+quat2mat[{0,1,0,0}].camTbaseRS.{0,0,0,1}
+
+(* %% *)
+camQbase =  Conjugate[param2quat[{camqx,camqy,camqz}/.resRealSense[[2]]]]
+
+(* %% *)
+(* これが follow-cameraのquaternionだが THREE/ros風に並べ替える必要がある *)
+webQbase = Quaternion[0,1,0,0]**camQbase
+
+(* %% *)
+(* ################################## *)
+(* THREE/ros2風に i,j,k,Realに並び替える *)
+{webQbase[[2]],webQbase[[3]],webQbase[[4]],webQbase[[1]]}
+
+(* %% *)
+MatrixForm@quat2mat[webQbase]
+
+(* %% *)

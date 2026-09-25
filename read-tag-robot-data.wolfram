@@ -158,5 +158,3 @@ poseDataSelected[[1,;;3,2]]
 
 (* %% *)
 Mean@#[[;;,2]]&/@poseDataSelected//MatrixForm
-
-(* %% *)

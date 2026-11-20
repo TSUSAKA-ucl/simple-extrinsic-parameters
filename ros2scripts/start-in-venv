@@ -1,0 +1,6 @@
+# need to install pyAgxArm
+# https://github.com/agilexrobotics/pyAgxArm.git
+# need to install scipy with --ignore-installed
+# pip install --ignore-installed scipy
+#
+PYTHONPATH=$VIRTUAL_ENV/lib/python3.10/site-packages:$PYTHONPATH ros2 launch agx_arm_ctrl start_single_agx_arm.launch.py arm_type:=piper can_port:=can_piper_r4e31

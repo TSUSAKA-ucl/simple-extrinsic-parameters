@@ -25,8 +25,17 @@ v4l2カメラとしてRealSense D435iを使用しているためレンズのデ�
    使ってv4l2カメラ(webCam)の画像を取得してapril tagのスクリーン上での位置を
    出力する。
 3. [`agx_arm_ctrl`](https://github.com/agilexrobotics/agx_arm_ros)と
-   [`agx_arm_simple_move`]の`waypoint_runner.py`を使って適当な位置に
-   アームを動かし、その間、`ros2 bag record`でデータ取得
+   [`waypoint_runner.py`](./ros2scripts/waypoint_runner.py)を使って適当な
+   位置([`move_jj.json`](./ros2scripts/move_jj.json))にアームを動かし、
+   ```
+   cd ros2scripts/
+   ./waypoint_runner.py move_jj.json
+   ```
+   その間、別ターミナルで[`ros2 bag record`](./ros2scripts/Bags/record.sh)で
+   [データ](./ros2scripts/Bags/static-topics-list.yaml)取得
+   ```
+   cd ros2scripts/Bags && ./record.sh
+   ```
 4. 取得したbagファイルから`/feedback/joint_states`, `/feedback/arm_status`,
    `/apriltag_detections`をcsvに抽出  
    ```
@@ -34,6 +43,9 @@ v4l2カメラとしてRealSense D435iを使用しているためレンズのデ�
    ros2 run bag2csv bag2csv /feedback/arm_status rosbag2_2026_09_16-15_56_51/ > rosbag2_2026_09_16-15_56_51-arm_status.csv
    ros2 run bag2csv bag2csv /apriltag_detections rosbag2_2026_09_16-15_56_51/ > rosbag2_2026_09_16-15_56_51-apriltag_detections.csv
    ```
+   `bag2csv`に関しては本リポジトリのメインcontributorに問い合わせ。無い場合は`ros2 bag convert`と
+   [`mcap`CLI](https://github.com/foxglove/mcap/releases/tag/releases%2Fmcap-cli%2Fv0.3.0)で
+   も可能。
 4. [`read-tag-robot-data.wolfram`](./read-tag-robot-data.wolfram)ノートブックで
    取得データ(CSV)を読み取り所定の部分を取り出す。`uvDataSetected`と`poseDataSelected`
 5. [`camera-pose-quat3.wolfram`](./camera-pose-quat3.wolfram)ノートブックで

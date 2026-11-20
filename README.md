@@ -23,7 +23,11 @@ v4l2カメラとしてRealSense D435iを使用しているためレンズのデ�
 1. PiPERアーム先端のフランジにAprilTag(tag36h11)を適当に固定する。
 2. [`apriltag_bridge`](https://github.com/TSUSAKA-ucl/apriltag_bridge)を
    使ってv4l2カメラ(webCam)の画像を取得してapril tagのスクリーン上での位置を
-   出力する。
+   出力する。カメラの解像度が1280x720の場合の例
+   ```
+    ros2 run apriltag_bridge apriltag_bridge_node --ros-args -p camera_index:=4 | \
+	ffplay -f rawvideo -pixel_format bgr24 -video_size 1280x720 -framerate 30 -
+	```
 3. [`agx_arm_ctrl`](https://github.com/agilexrobotics/agx_arm_ros)と
    [`waypoint_runner.py`](./ros2scripts/waypoint_runner.py)を使って適当な
    位置([`move_jj.json`](./ros2scripts/move_jj.json))にアームを動かし、
